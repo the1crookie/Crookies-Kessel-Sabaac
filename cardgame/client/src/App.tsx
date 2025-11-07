@@ -1,0 +1,464 @@
+// @ts-ignore
+import React, { useState, useEffect } from "react";
+import { io } from "socket.io-client";
+
+// Use environment variable for backend URL
+const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const socket = io(BACKEND_URL);
+
+export default function App() {
+  const [room, setRoom] = useState<any>(null);
+  const [name, setName] = useState("");
+  const [chips, setChips] = useState(6);
+  const [roomId, setRoomId] = useState("room1");
+  // @ts-ignore
+  const [debug, setDebug] = useState(false);
+  const [pendingDraw, setPendingDraw] = useState<any>(null);
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+
+  useEffect(() => {
+    socket.on("roomUpdate", setRoom);
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      socket.off("roomUpdate");
+      window.removeEventListener("resize", handleResize);
+    };
+  }, []);
+
+  if (!room)
+    return (
+      <div style={{ padding: 20 }}>
+        <h2>Create or Join Room</h2>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name"
+        />
+        <input
+          type="number"
+          value={chips}
+          min={4}
+          max={8}
+          onChange={(e) => setChips(+e.target.value)}
+          placeholder="Chips"
+        />
+        <input
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+          placeholder="Room ID"
+        />
+        <div style={{ marginTop: 10 }}>
+          <button
+            onClick={() => {
+              const currentName = name.trim();
+              const currentChips = chips;
+              const currentRoomId = roomId.trim();
+              if (!currentName) return alert("Enter a name");
+              if (currentChips < 4 || currentChips > 8)
+                return alert("Chips must be 4-8");
+              socket.emit(
+                "createRoom",
+                { name: currentName, chips: currentChips, roomId: currentRoomId },
+                console.log
+              );
+            }}
+          >
+            Create Room
+          </button>
+          <button
+            onClick={() => {
+              const currentName = name.trim();
+              const currentChips = chips;
+              const currentRoomId = roomId.trim();
+              if (!currentName) return alert("Enter a name");
+              if (currentChips < 4 || currentChips > 8)
+                return alert("Chips must be 4-8");
+              socket.emit(
+                "joinRoom",
+                { name: currentName, chips: currentChips, roomId: currentRoomId },
+                (res: any) => {
+                  if (res.error) alert(res.error);
+                }
+              );
+            }}
+            style={{ marginLeft: 10 }}
+          >
+            Join Room
+          </button>
+        </div>
+      </div>
+    );
+
+  const player = room.players.find((p: any) => p.id === socket.id);
+  const isYourTurn =
+    room.players[room.currentTurnPlayerIndex]?.id === socket.id;
+
+  const drawOptions = [
+    { color: "red", source: "deck" },
+    { color: "yellow", source: "deck" },
+    { color: "red", source: "discard" },
+    { color: "yellow", source: "discard" },
+  ];
+
+  const handleDraw = (drawOption: any) => {
+    socket.emit("drawCard", { roomId, ...drawOption }, (res: any) => {
+      if (res.ok) setPendingDraw(drawOption);
+      else console.log(res.error);
+    });
+  };
+
+  const handleDiscard = (discardIndex: number) => {
+    if (!pendingDraw) return;
+    socket.emit("discardCard", { roomId, discardIndex }, (res: any) => {
+      if (res.ok) setPendingDraw(null);
+      else console.log(res.error);
+    });
+  };
+
+  const handleResolveMystery = (cardId: string, chosenValue: number) => {
+    socket.emit(
+      "resolveMysteryCards",
+      { roomId, cardId, chosenValue },
+      (res: any) => {
+        if (!res.ok) console.log(res.error);
+      }
+    );
+  };
+
+  const handleNextRound = () => {
+    socket.emit("nextRound", { roomId }, (res: any) => {
+      if (!res.ok) console.log(res.error);
+    });
+  };
+
+  const leftWidth = windowWidth * 0.75 - 30; // minus padding
+  const rightWidth = windowWidth * 0.25 - 30;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        width: "100%",
+        height: "100vh",
+        boxSizing: "border-box",
+        overflow: "hidden",
+      }}
+    >
+      {/* Left panel */}
+      <div
+        style={{
+          width: leftWidth,
+          paddingLeft: 30,
+          paddingRight: 10,
+          overflowY: "auto",
+        }}
+      >
+        <h2>Room: {room.id}</h2>
+        <h3>
+          Round {room.roundNumber} | Current Turn:{" "}
+          {room.players[room.currentTurnPlayerIndex]?.name}
+        </h3>
+        <h3>Your Chips: {player.chipsTotal} (Anted: {player.chipsAnted})</h3>
+
+        <h3>Your Hand:</h3>
+        <div style={{ display: "flex", gap: 10 }}>
+          {["red", "yellow"].map((color) => {
+            const card = player.hand.find((c: any) => c.color === color);
+            return (
+              <div
+                key={color}
+                style={{
+                  border: "1px solid black",
+                  padding: 10,
+                  width: 70,
+                  textAlign: "center",
+                  backgroundColor: color === "red" ? "#ff4444" : "#ffeb3b",
+                  color: "black",
+                  fontWeight: "bold",
+                }}
+              >
+                {card ? `${card.value}` : "empty"}
+              </div>
+            );
+          })}
+        </div>
+
+        <h3>Deck Counts:</h3>
+        <div>
+          Red Deck: {room.deckRed.length} | Yellow Deck: {room.deckYellow.length}
+        </div>
+
+        <h3>Top of Discard Piles:</h3>
+        <div style={{ display: "flex", gap: 20 }}>
+          {["red", "yellow"].map((color) => {
+            const discardPile = color === "red" ? room.discardRed : room.discardYellow;
+            const topCard = discardPile[discardPile.length - 1];
+            return (
+              <div key={color}>
+                {topCard ? (
+					<div
+						style={{
+							display: "inline-block",
+							width: 70,
+							height: 70,
+							textAlign: "center",
+							lineHeight: "70px",
+							backgroundColor: color === "red" ? "#ff4444" : "#ffeb3b",
+							color: "black",
+							fontWeight: "bold",
+							clipPath: "polygon(30% 0%, 70% 0%, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0% 70%, 0% 30%)",
+							transform: "rotate(45deg)",
+							border: "1px solid black",
+						}}
+					>
+						{topCard.value}
+					</div>
+                ) : (
+                  "empty"
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Playing turn UI */}
+        {room.phase === "playing" && isYourTurn && (
+          <>
+            <h3>Your Turn:</h3>
+            {!pendingDraw ? (
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                {drawOptions.map((o, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleDraw(o)}
+                    style={{
+                      backgroundColor: o.color === "red" ? "#ff4444" : "#ffeb3b",
+                      color: "black",
+                      border: "1px solid black",
+                      padding: "5px 10px",
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Draw {o.color} {o.source}
+                  </button>
+                ))}
+                <button
+                  onClick={() => socket.emit("stand", { roomId }, console.log)}
+                  style={{
+                    backgroundColor: "#4fc3f7",
+                    color: "black",
+                    border: "1px solid black",
+                    padding: "5px 10px",
+                    cursor: "pointer",
+                    fontWeight: "bold",
+                  }}
+                >
+                  Stand
+                </button>
+              </div>
+            ) : (
+              <>
+                <h4>Choose which card to discard:</h4>
+                <div style={{ display: "flex", gap: 10 }}>
+                  {player.hand
+                    .filter((c: any) => c.color === pendingDraw.color)
+                    .map((c: any) => (
+                      <button
+                        key={c.id}
+                        onClick={() => handleDiscard(player.hand.indexOf(c))}
+                        style={{
+                          backgroundColor:
+                            c.color === "red" ? "#ff4444" : "#ffeb3b",
+                          color: "black",
+                          border: "1px solid black",
+                          padding: "5px 10px",
+                          cursor: "pointer",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {c.value}
+                      </button>
+                    ))}
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Imposter roll, reveal, waiting, debug... */}
+        {room.phase === "imposterRoll" &&
+          player.pendingImposters &&
+          player.pendingImposters.length > 0 && (
+            <div style={{ marginTop: 20 }}>
+              <h3>Imposter Dice Rolls</h3>
+              {player.pendingImposters
+                .filter((pi: any) => pi.active)
+                .map((pi: any) => {
+                  const card = player.hand.find((c: any) => c.id === pi.cardId);
+                  if (!card) return null;
+                  return (
+                    <div key={pi.cardId} style={{ marginBottom: 10 }}>
+                      <div>Imposter card (current value: {card.value})</div>
+                      <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
+                        {pi.rolls.map((roll: number) => (
+                          <button
+                            key={roll}
+                            style={{
+                              backgroundColor: "#4fc3f7",
+                              color: "black",
+                              border: "1px solid black",
+                              padding: "5px 10px",
+                              cursor: "pointer",
+                              fontWeight: "bold",
+                            }}
+                            onClick={() =>
+                              handleResolveMystery(pi.cardId, roll)
+                            }
+                          >
+                            {roll}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+
+        {room.phase === "reveal" && (
+          <div style={{ marginTop: 20 }}>
+            <h2>Round Results</h2>
+            {room.players.map((p: any) => {
+              const isWinner = room.winnerId === p.id;
+              return (
+                <div
+                  key={p.id}
+                  style={{
+                    marginBottom: 10,
+                    padding: 10,
+                    border: "1px solid black",
+                    backgroundColor: isWinner ? "#fff176" : "#f0f0f0",
+                    color: "black",
+                  }}
+                >
+                  <strong>
+                    {isWinner ? "★ " : ""}
+                    {p.name} (Chips: {p.chipsTotal})
+                  </strong>
+                  <div style={{ display: "flex", gap: 10, marginTop: 5 }}>
+                    {p.hand.map((c: any) => (
+                      <div
+                        key={c.id}
+                        style={{
+                          border: "1px solid black",
+                          padding: 10,
+                          width: 70,
+                          textAlign: "center",
+                          backgroundColor:
+                            c.color === "red"
+                              ? "#ff4444"
+                              : c.color === "yellow"
+                              ? "#ffeb3b"
+                              : "#cfd8dc",
+                          color: "black",
+                          fontWeight: "bold",
+                        }}
+                      >
+                        {c.value}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            <button
+              onClick={handleNextRound}
+              style={{
+                marginTop: 20,
+                backgroundColor: "#4fc3f7",
+                color: "black",
+                border: "1px solid black",
+                padding: "5px 10px",
+                cursor: "pointer",
+                fontWeight: "bold",
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        )}
+
+        {room.phase === "waiting" && (
+          <button
+            onClick={() => socket.emit("startGame", { roomId }, console.log)}
+            style={{ marginTop: 20 }}
+          >
+            Start Game
+          </button>
+        )}
+
+		{/*
+        <button
+          onClick={() => setDebug(!debug)}
+          style={{ marginTop: 20, display: "block" }}
+        >
+          Toggle Debug
+        </button>
+		*/}
+        {debug && <pre>{JSON.stringify(room, null, 2)}</pre>}
+      </div>
+
+		
+      {/* Right panel */}
+      <div
+        style={{
+          width: rightWidth,
+          borderLeft: "1px solid gray",
+          paddingLeft: 10,
+          display: "flex",
+          flexDirection: "column",
+          overflowY: "auto",
+        }}
+      >
+        <div style={{ marginBottom: 20 }}>
+          <h3>Opponents</h3>
+          {room.players
+            .filter((p: any) => p.id !== socket.id)
+            .map((p: any) => (
+              <div
+                key={p.id}
+                style={{
+                  padding: 5,
+                  marginBottom: 5,
+                  border: "1px solid black",
+                  borderRadius: 4,
+                  backgroundColor: "#f5f5f5",
+                  color: "black",
+                  fontWeight: "bold",
+                  display: "inline-block", // shrink to fit content
+                }}
+              >
+                <div>{p.name}</div>
+                <div>Chips: {p.chipsTotal}</div>
+                <div>Anted: {p.chipsAnted}</div>
+              </div>
+            ))}
+        </div>
+
+        <div style={{ flex: 1, overflowY: "auto" }}>
+			<h3>Game Log</h3>
+			<div style={{ fontSize: 12 }}>
+				{(room.gameLog || []).map((entry: any, i: number) => (
+					<div key={i}>
+						[{new Date(entry.timestamp).toLocaleTimeString()}] {entry.message}
+					</div>
+				))}
+			</div>
+		</div>
+
+      </div>
+    </div>
+  );
+}
