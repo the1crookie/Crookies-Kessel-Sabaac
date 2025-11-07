@@ -23,63 +23,80 @@ io.on("connection", (socket) => {
   console.log("client connected:", socket.id);
 
   socket.on("createRoom", ({ roomId, name, chips }, cb) => {
-    if (rooms.has(roomId)) return cb({ error: "room exists" });
+  if (rooms.has(roomId)) return cb({ error: "room exists" });
 
-    const room: Room = {
-      id: roomId,
-      players: [{ id: socket.id, name, chipsTotal: chips, chipsAnted: 0, hand: [] }],
-      deckRed: makeDeck("red"),
-      deckYellow: makeDeck("yellow"),
-      discardRed: [],
-      discardYellow: [],
-      currentTurnPlayerIndex: 0,
-      roundNumber: 0,
-      turnsThisRound: 0,
-      phase: "waiting",
-      gameLog: [],
-    };
+  const room: Room = {
+    id: roomId,
+    players: [
+      {
+        id: socket.id,
+        name,
+        chipsTotal: chips,
+        initialChips: chips,
+        chipsAnted: 0,
+        hand: [],
+      },
+    ],
+    deckRed: makeDeck("red"),
+    deckYellow: makeDeck("yellow"),
+    discardRed: [],
+    discardYellow: [],
+    currentTurnPlayerIndex: 0,
+    roundNumber: 0,
+    turnsThisRound: 0,
+    phase: "waiting",
+    gameLog: [],
+  };
 
-    rooms.set(roomId, room);
-    socket.join(roomId);
-    io.to(roomId).emit("roomUpdate", room);
+  rooms.set(roomId, room);
+  socket.join(roomId);
+  io.to(roomId).emit("roomUpdate", room);
 
-    room.gameLog.push({
-      playerId: "system",
-      playerName: "system",
-      message: `Room ${roomId} created by ${name}`,
-      timestamp: Date.now(),
-      timeFormatted: formatTime(Date.now()),
-    });
-
-    cb({ ok: true });
+  room.gameLog.push({
+    playerId: "system",
+    playerName: "system",
+    message: `Room ${roomId} created by ${name} (starting chips: ${chips})`,
+    timestamp: Date.now(),
+    timeFormatted: formatTime(Date.now()),
   });
 
-  socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
-    let room = rooms.get(roomId);
+  cb({ ok: true });
+});
 
-    if (room && room.players.length === 0) {
-      rooms.delete(roomId);
-      room = undefined;
-    }
+socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
+  let room = rooms.get(roomId);
 
-    if (!room) return cb({ error: "room does not exist, please create it first" });
-    if (room.phase !== "waiting") return cb({ error: "game already started" });
-    if (room.players.find((p) => p.id === socket.id)) return cb({ error: "already joined" });
+  if (room && room.players.length === 0) {
+    rooms.delete(roomId);
+    room = undefined;
+  }
 
-    room.players.push({ id: socket.id, name, chipsTotal: chips, chipsAnted: 0, hand: [] });
-    socket.join(roomId);
+  if (!room) return cb({ error: "room does not exist, please create it first" });
+  if (room.phase !== "waiting") return cb({ error: "game already started" });
+  if (room.players.find((p) => p.id === socket.id)) return cb({ error: "already joined" });
 
-    room.gameLog.push({
-      playerId: socket.id,
-      playerName: name,
-      message: `${name} joined the room`,
-      timestamp: Date.now(),
-      timeFormatted: formatTime(Date.now()),
-    });
-
-    io.to(roomId).emit("roomUpdate", room);
-    cb({ ok: true });
+  room.players.push({
+    id: socket.id,
+    name,
+    chipsTotal: chips,
+    initialChips: chips,
+    chipsAnted: 0,
+    hand: [],
   });
+  socket.join(roomId);
+
+  room.gameLog.push({
+    playerId: socket.id,
+    playerName: name,
+    message: `${name} joined the room (starting chips: ${chips})`,
+    timestamp: Date.now(),
+    timeFormatted: formatTime(Date.now()),
+  });
+
+  io.to(roomId).emit("roomUpdate", room);
+  cb({ ok: true });
+});
+
 
   socket.on("startGame", ({ roomId }, cb) => {
     const room = rooms.get(roomId);
@@ -260,6 +277,81 @@ io.on("connection", (socket) => {
     io.to(roomId).emit("roomUpdate", room);
     cb({ ok: true });
   });
+  
+    socket.on("playAgain", ({ roomId }, cb) => {
+    const room = rooms.get(roomId);
+    if (!room) return cb({ error: "no room" });
+
+    // keep the same players and chip totals
+    room.phase = "waiting";
+    room.roundNumber = 0;
+    room.turnsThisRound = 0;
+    room.winnerId = undefined;
+    room.grandWinnerId = undefined;
+    room.deckRed = makeDeck("red");
+    room.deckYellow = makeDeck("yellow");
+    room.discardRed = [];
+    room.discardYellow = [];
+
+    room.players.forEach((p) => {
+      p.hand = [];
+      p.chipsAnted = 0;
+      p.pendingImposters = [];
+      p.roundScore = undefined;
+    });
+
+    room.gameLog.push({
+      playerId: "system",
+      playerName: "system",
+      message: "Game restarted using previous settings.",
+      timestamp: Date.now(),
+      timeFormatted: formatTime(Date.now()),
+    });
+
+    io.to(roomId).emit("roomUpdate", room);
+    cb({ ok: true });
+  });
+  
+  socket.on("remakeRoom", ({ roomId }, cb) => {
+  const oldRoom = rooms.get(roomId);
+  if (!oldRoom) return cb({ error: "no room found" });
+
+  // Keep log and initial chip settings
+  const previousPlayers = oldRoom.players.map(p => ({
+    id: p.id,
+    name: p.name,
+    chipsTotal: p.initialChips ?? 8,
+    chipsAnted: 0,
+    hand: [],
+  }));
+
+  const newRoom: Room = {
+    id: roomId,
+    players: previousPlayers,
+    deckRed: makeDeck("red"),
+    deckYellow: makeDeck("yellow"),
+    discardRed: [],
+    discardYellow: [],
+    currentTurnPlayerIndex: 0,
+    roundNumber: 0,
+    turnsThisRound: 0,
+    phase: "waiting",
+    gameLog: [...oldRoom.gameLog], // keep the full previous log
+  };
+
+  // log the restart
+  newRoom.gameLog.push({
+    playerId: "system",
+    playerName: "system",
+    message: "Game restarted with same settings.",
+    timestamp: Date.now(),
+    timeFormatted: formatTime(Date.now()),
+  });
+
+  rooms.set(roomId, newRoom);
+  io.to(roomId).emit("roomUpdate", newRoom);
+  cb({ ok: true });
+});
 
   socket.on("disconnect", () => {
     for (const [roomId, room] of rooms) {
@@ -415,6 +507,24 @@ function handleScoring(room: Room) {
       timeFormatted: formatTime(Date.now()),
     });
   });
+  
+    // === GRAND WINNER CHECK ===
+  const stillIn = room.players.filter((p) => p.chipsTotal > 1);
+  if (stillIn.length === 1) {
+    const grandWinner = stillIn[0];
+    room.phase = "gameOver";
+    room.grandWinnerId = grandWinner.id;
+
+    room.gameLog.push({
+      playerId: "system",
+      playerName: "system",
+      message: `Grand Winner: ${grandWinner.name}!`,
+      timestamp: Date.now(),
+      timeFormatted: formatTime(Date.now()),
+    });
+
+    return;
+  }
 }
 
 function startNewRound(room: Room) {
@@ -457,14 +567,18 @@ function startNewRound(room: Room) {
   });
 }
 
+{/*
+
 // ===== Serve frontend =====
-const buildPath = path.join(__dirname, "../frontend/dist");
+const buildPath = path.join(__dirname, "../client/dist");
 app.use(express.static(buildPath));
 
 // fallback for all other routes
 app.use((req, res) => {
   res.sendFile(path.join(buildPath, "index.html"));
 });
+
+*/}
 
 // ===== Start server =====
 const PORT = process.env.PORT || 3001;

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 
 // Use environment variable for backend URL
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "https://crookies-kessel-sabaac-server.onrender.com";
 const socket = io(BACKEND_URL);
 
 export default function App() {
@@ -398,6 +398,28 @@ export default function App() {
             Start Game
           </button>
         )}
+		
+		{room.phase === "gameOver" && (
+		  <div className="flex flex-col items-center justify-center p-4">
+			<h2>
+			  Grand Winner: {room.players.find(p => p.id === room.grandWinnerId)?.name}
+			</h2>
+			<button
+			  onClick={() => {
+				socket.emit("remakeRoom", { roomId: room.id }, res => {
+				  if (res.ok) {
+					socket.emit("startGame", { roomId: room.id }, () => {});
+				  }
+				});
+			  }}
+			  className="mt-4 px-4 py-2 bg-blue-600 text-white rounded"
+			>
+			  Play Again
+			</button>
+		  </div>
+		)}
+
+
 
 		{/*
         <button
