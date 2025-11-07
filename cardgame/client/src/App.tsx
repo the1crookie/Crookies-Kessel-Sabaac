@@ -402,11 +402,11 @@ export default function App() {
 		{room.phase === "gameOver" && (
 		  <div className="flex flex-col items-center justify-center p-4">
 			<h2>
-			  Grand Winner: {room.players.find(p => p.id === room.grandWinnerId)?.name}
+			  Grand Winner: {room.players.find((p: any) => p.id === room.grandWinnerId)?.name}
 			</h2>
 			<button
 			  onClick={() => {
-				socket.emit("remakeRoom", { roomId: room.id }, res => {
+				socket.emit("remakeRoom", { roomId: room.id }, (res: any) => {
 				  if (res.ok) {
 					socket.emit("startGame", { roomId: room.id }, () => {});
 				  }
