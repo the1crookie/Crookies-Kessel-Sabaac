@@ -75,11 +75,14 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
   if (room.phase !== "waiting") return cb({ error: "game already started" });
   if (room.players.find((p) => p.id === socket.id)) return cb({ error: "already joined" });
 
+  // Inherit chip setting from host (first player in room)
+  const hostChips = room.players[0]?.initialChips ?? chips;
+
   room.players.push({
     id: socket.id,
     name,
-    chipsTotal: chips,
-    initialChips: chips,
+    chipsTotal: hostChips,
+    initialChips: hostChips,
     chipsAnted: 0,
     hand: [],
   });
@@ -88,7 +91,7 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
   room.gameLog.push({
     playerId: socket.id,
     playerName: name,
-    message: `${name} joined the room (starting chips: ${chips})`,
+    message: `${name} joined the room (starting chips: ${hostChips})`,
     timestamp: Date.now(),
     timeFormatted: formatTime(Date.now()),
   });
@@ -96,7 +99,6 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
   io.to(roomId).emit("roomUpdate", room);
   cb({ ok: true });
 });
-
 
   socket.on("startGame", ({ roomId }, cb) => {
     const room = rooms.get(roomId);
