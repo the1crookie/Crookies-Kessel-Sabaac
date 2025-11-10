@@ -3,14 +3,15 @@ import React, { useState, useEffect } from "react";
 import { io } from "socket.io-client";
 
 // Use environment variable for backend URL
-const BACKEND_URL = import.meta.env.VITE_API_URL || "https://crookies-kessel-sabaac-server.onrender.com";
+// const BACKEND_URL = import.meta.env.VITE_API_URL || "localhost:3001";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "https://crookies-kessel-sabaac-client.onrender.com";
 const socket = io(BACKEND_URL);
 
 export default function App() {
   const [room, setRoom] = useState<any>(null);
   const [name, setName] = useState("");
-  const [chips, setChips] = useState(6);
-  const [roomId, setRoomId] = useState("room1");
+  const [chips, setChips] = useState(8);
+  const [roomId, setRoomId] = useState("");
   // @ts-ignore
   const [debug, setDebug] = useState(false);
   const [pendingDraw, setPendingDraw] = useState<any>(null);
@@ -38,8 +39,6 @@ export default function App() {
         <input
           type="number"
           value={chips}
-          min={4}
-          max={8}
           onChange={(e) => setChips(+e.target.value)}
           placeholder="Chips"
         />
@@ -55,8 +54,6 @@ export default function App() {
               const currentChips = chips;
               const currentRoomId = roomId.trim();
               if (!currentName) return alert("Enter a name");
-              if (currentChips < 4 || currentChips > 8)
-                return alert("Chips must be 4-8");
               socket.emit(
                 "createRoom",
                 { name: currentName, chips: currentChips, roomId: currentRoomId },
@@ -72,8 +69,6 @@ export default function App() {
               const currentChips = chips;
               const currentRoomId = roomId.trim();
               if (!currentName) return alert("Enter a name");
-              if (currentChips < 4 || currentChips > 8)
-                return alert("Chips must be 4-8");
               socket.emit(
                 "joinRoom",
                 { name: currentName, chips: currentChips, roomId: currentRoomId },
@@ -86,6 +81,13 @@ export default function App() {
           >
             Join Room
           </button>
+{/*
+		Rules Text
+*/}
+		<h3>Rules:</h3>
+		<h7>Kessel Sabaac consists of two 22 card decks, named the Blood and Sand decks.  These decks consist of three copies of each number 1 through 6, three copies of the Imposter, and a single copy of the Sylops. <br /><br />Each player gets dealt one card from each deck, creating their hand.  They also start with a uniform number of chips, determined before play starts.<br /><br />On a player's turn they can either stand, choose to pass their turn, or draw a card.  If they draw, they ante one of their chips and then can draw from the Blood or Sand deck or the respective discard piles.<br /><br />A hand must always consist of one Blood and one Sand card, so after drawing the player must choose a card to discard to maintain this rule.<br /><br />Once each player has had 3 turns to draw or stand, the hands are revealed for scoring.<br /><br />When revealed, any holders of Imposters roll two 6 sided dice and choose one of the values to represent that card.  Any Sylops revealed will take the value of the other card in hand.</h7>
+		<h3>Scoring:</h3>
+		<h7>The goal is to have a pair in your final hand, called a sabaac.  Lower value cards are higher quality, so a 4 sabaac will beat a 5 sabaac, but lose to a 3 sabaac.  The best hand possible is a pair of Sylops, called a Prime sabaac.<br /><br />If no players have a sabaac, then scoring goes to the lowest difference between hand cards.  Ties in difference go to the hand with the highest quality cards.<br /><br />The winner of a round gets all of their anted chips back.  Losers lose their anted chips to the void, plus an amount of chips equal to the difference in their cards (no less than one chip in this way).</h7>
         </div>
       </div>
     );
@@ -227,7 +229,7 @@ export default function App() {
           <>
             <h3>Your Turn:</h3>
             {!pendingDraw ? (
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <div style={{ display: "wrap", gap: 10, marginTop: 10 }}>
                 {drawOptions.map((o, i) => (
                   <button
                     key={i}
@@ -445,7 +447,6 @@ export default function App() {
         }}
       >
         <div style={{ marginBottom: 20 }}>
-          <h3>Opponents</h3>
           {room.players
             .filter((p: any) => p.id !== socket.id)
             .map((p: any) => (
