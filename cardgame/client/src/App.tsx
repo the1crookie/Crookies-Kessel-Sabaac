@@ -10,7 +10,7 @@ const socket = io(BACKEND_URL);
 export default function App() {
   const [room, setRoom] = useState<any>(null);
   const [name, setName] = useState("");
-  const [chips, setChips] = useState(8);
+  const [chips, setChips] = useState(null);
   const [roomId, setRoomId] = useState("");
   // @ts-ignore
   const [debug, setDebug] = useState(false);
@@ -39,6 +39,7 @@ export default function App() {
         <input
           type="number"
           value={chips}
+		  min={0}
           onChange={(e) => setChips(+e.target.value)}
           placeholder="Chips"
         />
@@ -54,6 +55,7 @@ export default function App() {
               const currentChips = chips;
               const currentRoomId = roomId.trim();
               if (!currentName) return alert("Enter a name");
+			  if (!currentRoomId) return alert("Enter a room");
               socket.emit(
                 "createRoom",
                 { name: currentName, chips: currentChips, roomId: currentRoomId },
@@ -69,6 +71,7 @@ export default function App() {
               const currentChips = chips;
               const currentRoomId = roomId.trim();
               if (!currentName) return alert("Enter a name");
+			  if (!currentRoomId) return alert("Enter a room");
               socket.emit(
                 "joinRoom",
                 { name: currentName, chips: currentChips, roomId: currentRoomId },
