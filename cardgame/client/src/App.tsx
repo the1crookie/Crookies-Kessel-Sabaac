@@ -10,7 +10,7 @@ const socket = io(BACKEND_URL);
 export default function App() {
   const [room, setRoom] = useState<any>(null);
   const [name, setName] = useState("");
-  const [chips, setChips] = useState();
+  const [chips, setChips] = useState(0);
   const [roomId, setRoomId] = useState("");
   // @ts-ignore
   const [debug, setDebug] = useState(false);
