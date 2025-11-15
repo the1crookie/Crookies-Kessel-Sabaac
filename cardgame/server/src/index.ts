@@ -598,14 +598,14 @@ function startNewRound(room: Room) {
   });
 }
 
-{
+{/*
   const buildPath = path.join(__dirname, "../client/dist");
   app.use(express.static(buildPath));
 
   app.use((req, res) => {
     res.sendFile(path.join(buildPath, "index.html"));
   });
-}
+*/}
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
