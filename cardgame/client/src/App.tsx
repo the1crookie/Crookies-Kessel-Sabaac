@@ -10,7 +10,7 @@ const socket = io(BACKEND_URL);
 export default function App() {
   const [room, setRoom] = useState<any>(null);
   const [name, setName] = useState("");
-  const [chips, setChips] = useState(null);
+  const [chips, setChips] = useState();
   const [roomId, setRoomId] = useState("");
   // @ts-ignore
   const [debug, setDebug] = useState(false);
@@ -40,7 +40,7 @@ export default function App() {
           type="number"
           value={0}
 		  min={0}
-          onChange={(e) => setChips(e.target.value)}
+          onChange={(e) => setChips(+e.target.value)}
           placeholder="Chips"
         />
         <input
