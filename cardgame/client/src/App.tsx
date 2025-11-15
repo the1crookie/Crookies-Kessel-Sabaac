@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 
 // Use environment variable for backend URL
 // const BACKEND_URL = import.meta.env.VITE_API_URL || "localhost:3001";
-const BACKEND_URL = import.meta.env.VITE_API_URL || "https://crookies-kessel-sabaac-client.onrender.com";
+const BACKEND_URL = import.meta.env.VITE_API_URL || "https://crookies-kessel-sabaac-server.onrender.com";
 const socket = io(BACKEND_URL);
 
 export default function App() {
