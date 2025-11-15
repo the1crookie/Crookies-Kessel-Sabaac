@@ -23,82 +23,82 @@ io.on("connection", (socket) => {
   console.log("client connected:", socket.id);
 
   socket.on("createRoom", ({ roomId, name, chips }, cb) => {
-  if (rooms.has(roomId)) return cb({ error: "room exists" });
+    if (rooms.has(roomId)) return cb({ error: "room exists" });
 
-  const room: Room = {
-    id: roomId,
-    players: [
-      {
-        id: socket.id,
-        name,
-        chipsTotal: chips,
-        initialChips: chips,
-        chipsAnted: 0,
-        hand: [],
-      },
-    ],
-    deckRed: makeDeck("red"),
-    deckYellow: makeDeck("yellow"),
-    discardRed: [],
-    discardYellow: [],
-    currentTurnPlayerIndex: 0,
-    roundNumber: 0,
-    turnsThisRound: 0,
-    phase: "waiting",
-    gameLog: [],
-  };
+    const room: Room = {
+      id: roomId,
+      players: [
+        {
+          id: socket.id,
+          name,
+          chipsTotal: chips,
+          initialChips: chips,
+          chipsAnted: 0,
+          hand: [],
+        },
+      ],
+      deckRed: makeDeck("red"),
+      deckYellow: makeDeck("yellow"),
+      discardRed: [],
+      discardYellow: [],
+      currentTurnPlayerIndex: 0,
+      startingPlayerIndex: 0,          // added
+      roundNumber: 0,
+      turnsThisRound: 0,
+      phase: "waiting",
+      gameLog: [],
+    };
 
-  rooms.set(roomId, room);
-  socket.join(roomId);
-  io.to(roomId).emit("roomUpdate", room);
+    rooms.set(roomId, room);
+    socket.join(roomId);
+    io.to(roomId).emit("roomUpdate", room);
 
-  room.gameLog.push({
-    playerId: "system",
-    playerName: "system",
-    message: `Room ${roomId} created by ${name} (starting chips: ${chips})`,
-    timestamp: Date.now(),
-    timeFormatted: formatTime(Date.now()),
+    room.gameLog.push({
+      playerId: "system",
+      playerName: "system",
+      message: `Room ${roomId} created by ${name} (starting chips: ${chips})`,
+      timestamp: Date.now(),
+      timeFormatted: formatTime(Date.now()),
+    });
+
+    cb({ ok: true });
   });
 
-  cb({ ok: true });
-});
+  socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
+    let room = rooms.get(roomId);
 
-socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
-  let room = rooms.get(roomId);
+    if (room && room.players.length === 0) {
+      rooms.delete(roomId);
+      room = undefined;
+    }
 
-  if (room && room.players.length === 0) {
-    rooms.delete(roomId);
-    room = undefined;
-  }
+    if (!room) return cb({ error: "room does not exist, please create it first" });
+    if (room.phase !== "waiting") return cb({ error: "game already started" });
+    if (room.players.find((p) => p.id === socket.id)) return cb({ error: "already joined" });
 
-  if (!room) return cb({ error: "room does not exist, please create it first" });
-  if (room.phase !== "waiting") return cb({ error: "game already started" });
-  if (room.players.find((p) => p.id === socket.id)) return cb({ error: "already joined" });
+    const hostChips = room.players[0]?.initialChips ?? chips;
 
-  // Inherit chip setting from host (first player in room)
-  const hostChips = room.players[0]?.initialChips ?? chips;
+    room.players.push({
+      id: socket.id,
+      name,
+      chipsTotal: hostChips,
+      initialChips: hostChips,
+      chipsAnted: 0,
+      hand: [],
+    });
+    socket.join(roomId);
 
-  room.players.push({
-    id: socket.id,
-    name,
-    chipsTotal: hostChips,
-    initialChips: hostChips,
-    chipsAnted: 0,
-    hand: [],
+    room.gameLog.push({
+      playerId: socket.id,
+      playerName: name,
+      message: `${name} joined the room (starting chips: ${hostChips})`,
+      timestamp: Date.now(),
+      timeFormatted: formatTime(Date.now()),
+    });
+
+    io.to(roomId).emit("roomUpdate", room);
+    cb({ ok: true });
   });
-  socket.join(roomId);
-
-  room.gameLog.push({
-    playerId: socket.id,
-    playerName: name,
-    message: `${name} joined the room (starting chips: ${hostChips})`,
-    timestamp: Date.now(),
-    timeFormatted: formatTime(Date.now()),
-  });
-
-  io.to(roomId).emit("roomUpdate", room);
-  cb({ ok: true });
-});
 
   socket.on("startGame", ({ roomId }, cb) => {
     const room = rooms.get(roomId);
@@ -176,7 +176,7 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
     }
 
     room.currentTurnPlayerIndex = (room.currentTurnPlayerIndex + 1) % room.players.length;
-    if (room.currentTurnPlayerIndex === 0) room.roundNumber++;
+    if (room.currentTurnPlayerIndex === room.startingPlayerIndex) room.roundNumber++;
 
     io.to(roomId).emit("roomUpdate", room);
     cb({ ok: true });
@@ -209,9 +209,7 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
       timeFormatted: formatTime(Date.now()),
     });
 
-    if (player.pendingImposters.length > 0) {
-      player.pendingImposters[0].active = true;
-    }
+    if (player.pendingImposters.length > 0) player.pendingImposters[0].active = true;
 
     const anyPending = room.players.some(
       (p) => p.pendingImposters && p.pendingImposters.length > 0
@@ -256,7 +254,7 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
     }
 
     room.currentTurnPlayerIndex = (room.currentTurnPlayerIndex + 1) % room.players.length;
-    if (room.currentTurnPlayerIndex === 0) room.roundNumber++;
+    if (room.currentTurnPlayerIndex === room.startingPlayerIndex) room.roundNumber++;
 
     io.to(roomId).emit("roomUpdate", room);
     cb({ ok: true });
@@ -279,12 +277,11 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
     io.to(roomId).emit("roomUpdate", room);
     cb({ ok: true });
   });
-  
-    socket.on("playAgain", ({ roomId }, cb) => {
+
+  socket.on("playAgain", ({ roomId }, cb) => {
     const room = rooms.get(roomId);
     if (!room) return cb({ error: "no room" });
 
-    // keep the same players and chip totals
     room.phase = "waiting";
     room.roundNumber = 0;
     room.turnsThisRound = 0;
@@ -294,6 +291,8 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
     room.deckYellow = makeDeck("yellow");
     room.discardRed = [];
     room.discardYellow = [];
+    room.startingPlayerIndex = 0;
+    room.currentTurnPlayerIndex = 0;
 
     room.players.forEach((p) => {
       p.hand = [];
@@ -313,79 +312,99 @@ socket.on("joinRoom", ({ roomId, name, chips }, cb) => {
     io.to(roomId).emit("roomUpdate", room);
     cb({ ok: true });
   });
-  
+
   socket.on("remakeRoom", ({ roomId }, cb) => {
-  const oldRoom = rooms.get(roomId);
-  if (!oldRoom) return cb({ error: "no room found" });
+    const oldRoom = rooms.get(roomId);
+    if (!oldRoom) return cb({ error: "no room found" });
 
-  // Keep log and initial chip settings
-  const previousPlayers = oldRoom.players.map(p => ({
-    id: p.id,
-    name: p.name,
-    chipsTotal: p.initialChips ?? 8,
-    chipsAnted: 0,
-    hand: [],
-  }));
+    const previousPlayers = oldRoom.players.map(p => ({
+      id: p.id,
+      name: p.name,
+      chipsTotal: p.initialChips ?? 8,
+      chipsAnted: 0,
+      hand: [],
+    }));
 
-  const newRoom: Room = {
-    id: roomId,
-    players: previousPlayers,
-    deckRed: makeDeck("red"),
-    deckYellow: makeDeck("yellow"),
-    discardRed: [],
-    discardYellow: [],
-    currentTurnPlayerIndex: 0,
-    roundNumber: 0,
-    turnsThisRound: 0,
-    phase: "waiting",
-    gameLog: [...oldRoom.gameLog], // keep the full previous log
-  };
+    const newRoom: Room = {
+      id: roomId,
+      players: previousPlayers,
+      deckRed: makeDeck("red"),
+      deckYellow: makeDeck("yellow"),
+      discardRed: [],
+      discardYellow: [],
+      currentTurnPlayerIndex: 0,
+      startingPlayerIndex: 0,
+      roundNumber: 0,
+      turnsThisRound: 0,
+      phase: "waiting",
+      gameLog: [...oldRoom.gameLog],
+    };
 
-  // log the restart
-  newRoom.gameLog.push({
-    playerId: "system",
-    playerName: "system",
-    message: "Game restarted with same settings.",
-    timestamp: Date.now(),
-    timeFormatted: formatTime(Date.now()),
+    newRoom.gameLog.push({
+      playerId: "system",
+      playerName: "system",
+      message: "Game restarted with same settings.",
+      timestamp: Date.now(),
+      timeFormatted: formatTime(Date.now()),
+    });
+
+    rooms.set(roomId, newRoom);
+    io.to(roomId).emit("roomUpdate", newRoom);
+    cb({ ok: true });
   });
-
-  rooms.set(roomId, newRoom);
-  io.to(roomId).emit("roomUpdate", newRoom);
-  cb({ ok: true });
-});
 
   socket.on("disconnect", () => {
     for (const [roomId, room] of rooms) {
+      const leavingIndex = room.players.findIndex(p => p.id === socket.id);
+      const wasStartingPlayer = leavingIndex === room.startingPlayerIndex;
+
       room.players = room.players.filter((p) => p.id !== socket.id);
+
       if (room.players.length === 0) {
         rooms.delete(roomId);
-      } else {
-        io.to(roomId).emit("roomUpdate", room);
+        continue;
       }
+
+      if (leavingIndex >= 0) {
+        if (leavingIndex < room.startingPlayerIndex) {
+          room.startingPlayerIndex = (room.startingPlayerIndex - 1 + room.players.length) % room.players.length;
+        }
+        if (wasStartingPlayer) {
+          room.startingPlayerIndex = room.startingPlayerIndex % room.players.length;
+        }
+        room.currentTurnPlayerIndex = room.startingPlayerIndex;
+      }
+
+      io.to(roomId).emit("roomUpdate", room);
     }
   });
 });
 
-// ===== HELPERS =====
 function beginImposterPhase(room: Room, roomId: string) {
   room.players.forEach((p) => {
     const imposters: PendingImposter[] = p.hand
       .filter((c) => c.value === "Imposter")
       .map((c, i) => ({
         cardId: c.id,
-        rolls: [Math.ceil(Math.random() * 6), Math.ceil(Math.random() * 6)],
+        rolls: [
+          Math.ceil(Math.random() * 6),
+          Math.ceil(Math.random() * 6),
+        ],
         active: i === 0,
       }));
     p.pendingImposters = imposters;
   });
 
-  const anyImposters = room.players.some((p) => (p.pendingImposters ?? []).length > 0);
+  const anyImposters = room.players.some(
+    (p) => (p.pendingImposters ?? []).length > 0
+  );
 
   if (!anyImposters) {
     room.phase = "reveal";
     room.players.forEach((p) => {
-      const sylopsCard = p.hand.find((c) => c.value === "Sylops" || c.type === "Sylops");
+      const sylopsCard = p.hand.find(
+        (c) => c.value === "Sylops" || c.type === "Sylops"
+      );
       if (sylopsCard) {
         const otherCard = p.hand.find((c) => c.id !== sylopsCard.id);
         if (otherCard) sylopsCard.value = otherCard.value;
@@ -437,7 +456,7 @@ function handleScoring(room: Room) {
     const isSylopsPair = values.every((v) => v === "Sylops");
     if (isSylopsPair) return { id: p.id, isSylopsPair };
 
-    const numericValues = values.map((v) => (v === "Sylops" ? 0 : v as number));
+    const numericValues = values.map((v) => (v === "Sylops" ? 0 : (v as number)));
     numericValues.sort((a, b) => a - b);
 
     let pairValue: number | undefined;
@@ -491,7 +510,10 @@ function handleScoring(room: Room) {
 
   room.players.forEach((p) => (p.chipsAnted = 0));
 
-  const winnerNames = winningPlayers.map((p) => room.players.find((pl) => pl.id === p.id)!.name).join(", ");
+  const winnerNames = winningPlayers
+    .map((p) => room.players.find((pl) => pl.id === p.id)!.name)
+    .join(", ");
+
   room.gameLog.push({
     playerId: "system",
     playerName: "system",
@@ -509,9 +531,8 @@ function handleScoring(room: Room) {
       timeFormatted: formatTime(Date.now()),
     });
   });
-  
-    // === GRAND WINNER CHECK ===
-  const stillIn = room.players.filter((p) => p.chipsTotal > 1);
+
+  const stillIn = room.players.filter((p) => p.chipsTotal > 0);
   if (stillIn.length === 1) {
     const grandWinner = stillIn[0];
     room.phase = "gameOver";
@@ -532,7 +553,15 @@ function handleScoring(room: Room) {
 function startNewRound(room: Room) {
   room.phase = "playing";
   room.roundNumber++;
-  room.currentTurnPlayerIndex = 0;
+
+  if (room.roundNumber === 1) {
+    room.startingPlayerIndex = 0;
+  } else {
+    room.startingPlayerIndex = (room.startingPlayerIndex + 1) % room.players.length;
+  }
+
+  room.currentTurnPlayerIndex = room.startingPlayerIndex;
+
   room.turnsThisRound = 0;
   room.winnerId = undefined;
 
@@ -563,25 +592,20 @@ function startNewRound(room: Room) {
   room.gameLog.push({
     playerId: "system",
     playerName: "system",
-    message: `Round ${room.roundNumber} started.`,
+    message: `Round ${room.roundNumber} started. First player: ${room.players[room.startingPlayerIndex].name}`,
     timestamp: Date.now(),
     timeFormatted: formatTime(Date.now()),
   });
 }
 
-{/*
+{
+  const buildPath = path.join(__dirname, "../client/dist");
+  app.use(express.static(buildPath));
 
-// ===== Serve frontend =====
-const buildPath = path.join(__dirname, "../client/dist");
-app.use(express.static(buildPath));
+  app.use((req, res) => {
+    res.sendFile(path.join(buildPath, "index.html"));
+  });
+}
 
-// fallback for all other routes
-app.use((req, res) => {
-  res.sendFile(path.join(buildPath, "index.html"));
-});
-
-*/}
-
-// ===== Start server =====
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
