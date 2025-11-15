@@ -38,7 +38,7 @@ export default function App() {
         />
         <input
           type="number"
-          value={chips}
+          value={0}
 		  min={0}
           onChange={(e) => setChips(+e.target.value)}
           placeholder="Chips"
